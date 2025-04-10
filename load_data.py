@@ -3,9 +3,12 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.schema.document import Document
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
+from config_loader import load_config
 
 DATA_PATH = "data"
 CHROMA_PATH = "chroma"
+
+config = load_config()
 
 
 def load_documents():
@@ -27,8 +30,8 @@ def split_documents(documents: list[Document]):
 
 def get_embedding_function():
     try:
-        model = "mistral"
-        return OllamaEmbeddings(model=model)
+        model_name = config.get("model", "mistral")
+        return OllamaEmbeddings(model=model_name)
     except ConnectionError:
         print("Failed to connect to Ollama. Please check the service and try again.")
         return None

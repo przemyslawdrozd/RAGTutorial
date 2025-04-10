@@ -4,6 +4,7 @@ from langchain_ollama import OllamaEmbeddings
 from langchain.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaLLM
 from collections import defaultdict
+from config_loader import load_config
 
 CHROMA_PATH = "chroma"
 
@@ -20,11 +21,12 @@ Question: {question}
 Answer:
 """
 
+config = load_config()
 
 def get_embedding_function():
     try:
-        model = "mistral"
-        return OllamaEmbeddings(model=model, temperature=0)
+        model_name = config.get("model", "mistral")
+        return OllamaEmbeddings(model=model_name, temperature=0)
     except ConnectionError:
         print("Failed to connect to Ollama. Please check the service and try again.")
         return None
@@ -43,11 +45,14 @@ def query_rag_per_doc(query_text: str):
         grouped_contexts[source].append(doc.page_content)
 
     prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-    model = OllamaLLM(model="mistral", temperature=0)
+
+    model_name = config.get("model", "mistral")
+    model = OllamaLLM(model=model_name, temperature=0.5)
 
     final_results = {}
 
     for source, pages in grouped_contexts.items():
+        print("Query source:", source)
         context_text = "\n\n---\n\n".join(pages)
         prompt = prompt_template.format(context=context_text, question=query_text)
         response_text = model.invoke(prompt)
