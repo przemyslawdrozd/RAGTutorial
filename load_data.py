@@ -8,7 +8,7 @@ from config_loader import load_config
 DATA_PATH = "data"
 CHROMA_PATH = "chroma"
 
-config = load_config()
+MODEL_NAME = load_config().get("embedding_model", "mistral")
 
 
 def load_documents():
@@ -30,8 +30,7 @@ def split_documents(documents: list[Document]):
 
 def get_embedding_function():
     try:
-        model_name = config.get("model", "mistral")
-        return OllamaEmbeddings(model=model_name)
+        return OllamaEmbeddings(model=MODEL_NAME)
     except ConnectionError:
         print("Failed to connect to Ollama. Please check the service and try again.")
         return None
@@ -67,7 +66,7 @@ def calculate_chunk_ids(chunks):
 
 def add_to_chroma(doc_chunks: list[Document], ollama_model):
     db = Chroma(
-        persist_directory=CHROMA_PATH,
+        persist_directory=f"{CHROMA_PATH}/{MODEL_NAME}",
         embedding_function=ollama_model
     )
     # Calculate Page IDs.

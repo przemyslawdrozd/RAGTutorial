@@ -1,1 +1,4 @@
-model: "phi"
+embedding_model: "nomic-embed-text"
+llm_model: "mistral"
+multiple_responses: true
+similarity_threshold: 0.85
