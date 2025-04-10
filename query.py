@@ -3,6 +3,7 @@ from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 from langchain.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaLLM
+from collections import defaultdict
 
 CHROMA_PATH = "chroma"
 
@@ -22,12 +23,40 @@ Answer:
 
 def get_embedding_function():
     try:
-        model = "llama2:latest"
-        return OllamaEmbeddings(model=model)
+        model = "mistral"
+        return OllamaEmbeddings(model=model, temperature=0)
     except ConnectionError:
         print("Failed to connect to Ollama. Please check the service and try again.")
         return None
 
+
+def query_rag_per_doc(query_text: str):
+    embedding_function = get_embedding_function()
+    db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function)
+
+    results = db.similarity_search_with_score(query_text, k=20)
+
+    # Group results by document (source)
+    grouped_contexts = defaultdict(list)
+    for doc, score in results:
+        source = doc.metadata.get("source", "unknown")
+        grouped_contexts[source].append(doc.page_content)
+
+    prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
+    model = OllamaLLM(model="mistral", temperature=0)
+
+    final_results = {}
+
+    for source, pages in grouped_contexts.items():
+        context_text = "\n\n---\n\n".join(pages)
+        prompt = prompt_template.format(context=context_text, question=query_text)
+        response_text = model.invoke(prompt)
+        final_results[source] = response_text
+
+    for source, response in final_results.items():
+        print(f"\n=== Answer from {source} ===\n{response}\n")
+
+    return final_results
 
 def query_rag(query_text: str):
     # Prepare the DB.
@@ -38,7 +67,7 @@ def query_rag(query_text: str):
 
     # Search the DB.
     print("Searching in db...")
-    results = db.similarity_search_with_score(query_text, k=10)
+    results = db.similarity_search_with_score(query_text, k=8)
     print("Found result", len(results))
 
     context_text = "\n\n---\n\n".join([doc.page_content for doc, _score in results])
@@ -69,4 +98,5 @@ if __name__ == "__main__":
     parser.add_argument("query_text", type=str, help="The query text.")
     args = parser.parse_args()
     query_text = args.query_text
-    query_rag(query_text)
+    query_rag_per_doc(args.query_text)
+    # query_rag(args.query_text)

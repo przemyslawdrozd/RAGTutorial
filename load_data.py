@@ -27,7 +27,7 @@ def split_documents(documents: list[Document]):
 
 def get_embedding_function():
     try:
-        model = "llama2:latest"
+        model = "mistral"
         return OllamaEmbeddings(model=model)
     except ConnectionError:
         print("Failed to connect to Ollama. Please check the service and try again.")
