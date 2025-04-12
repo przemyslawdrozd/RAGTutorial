@@ -1,6 +1,7 @@
 # 🧠 RAGTutorial
 
 A simple **Retrieval-Augmented Generation (RAG)** pipeline using **LangChain**, **ChromaDB**, and **Ollama** — built to answer questions based on your own documents.
+![rag-demo-white-bg](https://github.com/user-attachments/assets/2f235505-1744-4c2c-aeb9-3b6fd4237a14)
 
 ---
 
