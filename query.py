@@ -63,6 +63,10 @@ def query_rag(query_text: str, k=8):
     filtered = filter_results_by_score(results, threshold=SIMILARITY_THRESHOLD)
     print(f"{len(filtered)} passed the similarity threshold.")
 
+    if not filtered:
+        print("⚠️ No high-confidence chunks found, falling back to top 3...")
+        filtered = results[:3]
+
     model = load_llm_model()
     prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
 
@@ -75,10 +79,11 @@ def query_rag(query_text: str, k=8):
 
         final_responses = {}
         for source, pages in grouped.items():
-            print(f"\n→ Querying for source: {source}")
+            print("Querying for source:", source)
             context_text = "\n\n---\n\n".join(pages)
             prompt = prompt_template.format(context=context_text, question=query_text)
             response = model.invoke(prompt)
+            print("Got response for source", source)
             final_responses[source] = response
 
         for source, response in final_responses.items():
