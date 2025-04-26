@@ -8,7 +8,7 @@ __pycache__/
 
 # local db
 chroma/*
-
+data/*
 # Distribution / packaging
 .Python
 build/
@@ -88,3 +88,5 @@ venv.bak/
 
 # VS Code
 .vscode/
+
+config.yaml
