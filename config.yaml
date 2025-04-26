@@ -1,4 +1,6 @@
-embedding_model: "nomic-embed-text"
+embedding_model: "mxbai-embed-large"
 llm_model: "mistral"
 multiple_responses: true
 similarity_threshold: 0.85
+
+
