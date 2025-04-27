@@ -4,13 +4,15 @@ from langchain.schema.document import Document
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from config_loader import load_config
+import sqlite3
 import pandas as pd
 import os
 
 DATA_PATH = "data"
 CHROMA_PATH = "chroma"
-
+SQLITE_DB_PATH = "chroma/sqlitedb"
 MODEL_NAME = load_config().get("embedding_model", "mistral")
+sql_column_summary = load_config().get("sql_column_summary")
 
 
 def load_documents() -> list[Document]:
@@ -22,22 +24,17 @@ def load_documents() -> list[Document]:
     pdf_loader = PyPDFDirectoryLoader(DATA_PATH)
     documents.extend(pdf_loader.load())
 
-    # Load CSVs with custom loader
+    # Load CSVs to SQLite + generate schema docs
     print("→ Scanning for CSVs...")
     for file in os.listdir(DATA_PATH):
         if file.endswith(".csv"):
             file_path = os.path.join(DATA_PATH, file)
-            print(f"→ Loading CSV: {file}")
+            print(f"→ Loading CSV into SQLite: {file}")
             try:
-                docs_from_csv = generic_csv_loader(file_path)
-
-                # Generate summary
-                summary_doc = summarize_csv(file_path)
-                documents.extend([summary_doc] + docs_from_csv)
-                print(f"   ✅ Loaded {len(docs_from_csv)} rows + 1 summary from {file}")
-
-                documents.extend(docs_from_csv)
-                print(f"   ✅ Loaded {len(docs_from_csv)} rows from {file}")
+                table_name = load_csv_to_sqlite(file_path, SQLITE_DB_PATH)
+                schema_doc = generate_schema_doc(SQLITE_DB_PATH, table_name)
+                documents.append(schema_doc)
+                print(f"   ✅ Loaded {file} into SQLite as table {table_name}")
             except Exception as e:
                 print(f"   ❌ Failed to load {file}: {e}")
 
@@ -45,32 +42,81 @@ def load_documents() -> list[Document]:
     return documents
 
 
+def load_csv_to_sqlite(file_path, db_path):
+    df = pd.read_csv(file_path)
+
+    # 🚀 Snake_case for column name
+    df.columns = [col.strip().lower().replace(" ", "_") for col in df.columns]
+
+    # 🚀 Strip spaces
+    for col in df.select_dtypes(include=['object']).columns:
+        df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
+
+    # 🚀 Save to SQLite
+    conn = sqlite3.connect(db_path)
+    table_name = os.path.splitext(os.path.basename(file_path))[0].lower().replace(" ", "_")  # też snake_case dla tabeli
+
+    df.to_sql(table_name, conn, if_exists="replace", index=False)
+    conn.close()
+
+    print(f"✅ Loaded CSV '{file_path}' into table '{table_name}' with cleaned columns and data.")
+    return table_name
+
+
+def generate_schema_doc(db_path, table_name):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    columns = cursor.fetchall()
+
+    column_descriptions = []
+    for col in columns:
+        col_name_original = col[1]
+        col_name_snake = col_name_original.strip().lower().replace("\"", "").replace(" ", "_")
+        col_type = col[2]
+
+        # 🚀 RENAME COLUMN - if different name
+        if col_name_original != col_name_snake:
+            print(f"Renaming column: {col_name_original} -> {col_name_snake}")
+            cursor.execute(f'ALTER TABLE `{table_name}` RENAME COLUMN `{col_name_original}` TO `{col_name_snake}`')
+
+        cursor.execute(
+            f"SELECT DISTINCT `{col_name_snake}` FROM `{table_name}` WHERE `{col_name_snake}` IS NOT NULL LIMIT 5;")
+        raw_values = cursor.fetchall()
+
+        # Set limit to 20 chars
+        unique_values = []
+        for row in raw_values:
+            val = str(row[0])
+            if len(val) > 20:
+                val = val[:17] + "..."
+            unique_values.append(val)
+
+        value_info = f" — example values: {', '.join(unique_values)}" if unique_values else ""
+        column_descriptions.append(f"- {col_name_snake} ({col_type}){value_info}")
+
+    conn.close()
+
+    schema_text = (
+            f"Table: {table_name}\n"
+            f"Columns:\n" + "\n".join(column_descriptions)
+    )
+
+    all_column_names = [f'"{col[1]}"' for col in columns]
+
+    schema_text += (
+            f"\n\n{sql_column_summary}\n" + ", ".join(
+        all_column_names)
+    )
+
+    print("Created schema_text", schema_text)
+    return Document(page_content=schema_text, metadata={"source": f"{db_path}:{table_name}", "schema": True})
+
+
 def row_to_string(row: dict) -> str:
     return "; ".join([f"{key}: {value}" for key, value in row.items()])
 
-
-def summarize_csv(file_path: str) -> Document:
-    df = pd.read_csv(file_path)
-    columns = list(df.columns)
-    num_rows = len(df)
-
-    summary_lines = [
-        f"The dataset '{os.path.basename(file_path)}' contains {num_rows} rows.",
-        f"It includes the following columns: {', '.join(columns)}.",
-    ]
-
-    # Try summarizing a few useful columns
-    for col in columns:
-        if df[col].nunique() < 50 and df[col].dtype == object:
-            unique_values = df[col].dropna().unique()
-            summary_lines.append(f"Column '{col}' has {len(unique_values)} unique values: {', '.join(map(str, unique_values[:10]))}...")
-
-    summary = "\n".join(summary_lines)
-
-    return Document(
-        page_content=summary,
-        metadata={"source": file_path, "summary": True}
-    )
 
 def generic_csv_loader(file_path):
     df = pd.read_csv(file_path)
@@ -102,7 +148,7 @@ def get_embedding_function():
 
 
 def calculate_chunk_ids(chunks):
-    # This will create IDs like "data/monopoly.pdf:6:2"
+    # This will create IDs like "data/pdf:6:2"
     last_page_id = None
     current_chunk_index = 0
 
